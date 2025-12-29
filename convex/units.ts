@@ -4,7 +4,6 @@ import { query, mutation } from "./_generated/server";
 export const list = query({
   args: {
     search: v.optional(v.string()),
-    unitType: v.optional(v.string()),
     minRent: v.optional(v.number()),
     maxRent: v.optional(v.number()),
   },
@@ -14,30 +13,13 @@ export const list = query({
     if (args.search) {
       units = await ctx.db
         .query("units")
-        .withSearchIndex("search_body", (q) => {
-          const search = q.search("searchContent", args.search!);
-          if (args.unitType) {
-            return search.eq("unitType", args.unitType);
-          }
-          return search;
-        })
+        .withSearchIndex("search_body", (q) => q.search("searchContent", args.search!))
         .collect();
-        
-        // Manual filter for unitType if provided (and not handled by index effectively due to complexity)
-        if (args.unitType) {
-            units = units.filter(u => u.unitType === args.unitType);
-        }
-
     } else {
-      let q = ctx.db.query("units");
-      if (args.unitType) {
-        q = q.filter((q) => q.eq(q.field("unitType"), args.unitType));
-      }
-      units = await q.collect();
+      units = await ctx.db.query("units").collect();
     }
 
     // Filter by Rent (min/max)
-    // "Starting Rent" is the lowest rent in the rooms array.
     if (args.minRent !== undefined || args.maxRent !== undefined) {
       units = units.filter((unit) => {
         if (!unit.rooms || unit.rooms.length === 0) return false;
@@ -56,7 +38,18 @@ export const list = query({
 export const getById = query({
   args: { id: v.id("units") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
+    const unit = await ctx.db.get(args.id);
+    if (!unit) return null;
+    
+    // Resolve gallery URLs
+    const galleryWithUrls = await Promise.all(
+        (unit.gallery || []).map(async (img) => ({
+            ...img,
+            url: await ctx.storage.getUrl(img.storageId)
+        }))
+    );
+    
+    return { ...unit, gallery: galleryWithUrls };
   },
 });
 
@@ -64,12 +57,11 @@ export const create = mutation({
   args: {
     name: v.string(),
     area: v.string(),
-    unitType: v.string(),
     coordinates: v.object({
       lat: v.optional(v.number()),
       lng: v.optional(v.number()),
       address: v.string(),
-      mapLink: v.optional(v.string()),
+      mapLink: v.optional(v.string()), // Google Maps Link
     }),
     rooms: v.array(
       v.object({
@@ -77,6 +69,8 @@ export const create = mutation({
         rent: v.number(),
         depositRefundable: v.number(),
         depositNonRefundable: v.number(),
+        hasAttachedBathroom: v.boolean(),
+        hasBalcony: v.boolean(),
       })
     ),
     contacts: v.array(
@@ -96,10 +90,12 @@ export const create = mutation({
     ),
     distanceFromKoramangala: v.string(),
     hasFood: v.boolean(),
+    hasLaundry: v.boolean(),
+    hasWifi: v.boolean(),
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const searchContent = `${args.name} ${args.area}`; // Basic search content generation
+    const searchContent = `${args.name} ${args.area}`; 
     return await ctx.db.insert("units", { ...args, searchContent });
   },
 });
@@ -107,10 +103,8 @@ export const create = mutation({
 export const update = mutation({
   args: {
     id: v.id("units"),
-    // Partial updates setup
     name: v.optional(v.string()),
     area: v.optional(v.string()),
-    unitType: v.optional(v.string()),
     coordinates: v.optional(v.object({
       lat: v.optional(v.number()),
       lng: v.optional(v.number()),
@@ -123,6 +117,8 @@ export const update = mutation({
         rent: v.number(),
         depositRefundable: v.number(),
         depositNonRefundable: v.number(),
+        hasAttachedBathroom: v.boolean(),
+        hasBalcony: v.boolean(),
       })
     )),
     contacts: v.optional(v.array(
@@ -142,6 +138,8 @@ export const update = mutation({
     )),
     distanceFromKoramangala: v.optional(v.string()),
     hasFood: v.optional(v.boolean()),
+    hasLaundry: v.optional(v.boolean()),
+    hasWifi: v.optional(v.boolean()),
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {

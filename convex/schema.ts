@@ -5,7 +5,7 @@ export default defineSchema({
   units: defineTable({
     name: v.string(),
     area: v.string(),
-    unitType: v.string(), // "PG", "Flat", "Hostel"
+    // unitType removed, implicitly PG
     coordinates: v.object({
       lat: v.optional(v.number()),
       lng: v.optional(v.number()),
@@ -14,10 +14,12 @@ export default defineSchema({
     }),
     rooms: v.array(
       v.object({
-        roomType: v.string(),
+        roomType: v.string(), // "Single", "Double Sharing", "Triple Sharing"
         rent: v.number(),
         depositRefundable: v.number(),
         depositNonRefundable: v.number(),
+        hasAttachedBathroom: v.boolean(),
+        hasBalcony: v.boolean(),
       })
     ),
     contacts: v.array(
@@ -37,12 +39,14 @@ export default defineSchema({
     ),
     distanceFromKoramangala: v.string(),
     hasFood: v.boolean(),
+    hasLaundry: v.boolean(),
+    hasWifi: v.boolean(),
     notes: v.optional(v.string()),
     
     // For search indexing (Name + Area)
     searchContent: v.string(), 
   }).searchIndex("search_body", {
     searchField: "searchContent",
-    filterFields: ["unitType", "hasFood"], 
+    filterFields: ["hasFood", "hasLaundry", "hasWifi"], 
   }),
 });
